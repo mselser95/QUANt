@@ -1,0 +1,302 @@
+{
+	"compiler": {
+		"version": "0.8.22+commit.4fc1097e"
+	},
+	"language": "Solidity",
+	"output": {
+		"abi": [
+			{
+				"anonymous": false,
+				"inputs": [
+					{
+						"indexed": true,
+						"internalType": "address",
+						"name": "owner",
+						"type": "address"
+					},
+					{
+						"indexed": true,
+						"internalType": "address",
+						"name": "spender",
+						"type": "address"
+					},
+					{
+						"indexed": false,
+						"internalType": "uint256",
+						"name": "value",
+						"type": "uint256"
+					}
+				],
+				"name": "Approval",
+				"type": "event"
+			},
+			{
+				"anonymous": false,
+				"inputs": [
+					{
+						"indexed": true,
+						"internalType": "address",
+						"name": "from",
+						"type": "address"
+					},
+					{
+						"indexed": true,
+						"internalType": "address",
+						"name": "to",
+						"type": "address"
+					},
+					{
+						"indexed": false,
+						"internalType": "uint256",
+						"name": "value",
+						"type": "uint256"
+					}
+				],
+				"name": "Transfer",
+				"type": "event"
+			},
+			{
+				"inputs": [
+					{
+						"internalType": "address",
+						"name": "",
+						"type": "address"
+					},
+					{
+						"internalType": "address",
+						"name": "",
+						"type": "address"
+					}
+				],
+				"name": "allowance",
+				"outputs": [
+					{
+						"internalType": "uint256",
+						"name": "",
+						"type": "uint256"
+					}
+				],
+				"stateMutability": "view",
+				"type": "function"
+			},
+			{
+				"inputs": [
+					{
+						"internalType": "address",
+						"name": "spender",
+						"type": "address"
+					},
+					{
+						"internalType": "uint256",
+						"name": "amount",
+						"type": "uint256"
+					}
+				],
+				"name": "approve",
+				"outputs": [
+					{
+						"internalType": "bool",
+						"name": "",
+						"type": "bool"
+					}
+				],
+				"stateMutability": "nonpayable",
+				"type": "function"
+			},
+			{
+				"inputs": [
+					{
+						"internalType": "address",
+						"name": "",
+						"type": "address"
+					}
+				],
+				"name": "balanceOf",
+				"outputs": [
+					{
+						"internalType": "uint256",
+						"name": "",
+						"type": "uint256"
+					}
+				],
+				"stateMutability": "view",
+				"type": "function"
+			},
+			{
+				"inputs": [
+					{
+						"internalType": "uint256",
+						"name": "amount",
+						"type": "uint256"
+					}
+				],
+				"name": "burn",
+				"outputs": [],
+				"stateMutability": "nonpayable",
+				"type": "function"
+			},
+			{
+				"inputs": [],
+				"name": "decimals",
+				"outputs": [
+					{
+						"internalType": "uint8",
+						"name": "",
+						"type": "uint8"
+					}
+				],
+				"stateMutability": "view",
+				"type": "function"
+			},
+			{
+				"inputs": [
+					{
+						"internalType": "uint256",
+						"name": "amount",
+						"type": "uint256"
+					}
+				],
+				"name": "mint",
+				"outputs": [],
+				"stateMutability": "nonpayable",
+				"type": "function"
+			},
+			{
+				"inputs": [],
+				"name": "name",
+				"outputs": [
+					{
+						"internalType": "string",
+						"name": "",
+						"type": "string"
+					}
+				],
+				"stateMutability": "view",
+				"type": "function"
+			},
+			{
+				"inputs": [],
+				"name": "symbol",
+				"outputs": [
+					{
+						"internalType": "string",
+						"name": "",
+						"type": "string"
+					}
+				],
+				"stateMutability": "view",
+				"type": "function"
+			},
+			{
+				"inputs": [],
+				"name": "totalSupply",
+				"outputs": [
+					{
+						"internalType": "uint256",
+						"name": "",
+						"type": "uint256"
+					}
+				],
+				"stateMutability": "view",
+				"type": "function"
+			},
+			{
+				"inputs": [
+					{
+						"internalType": "address",
+						"name": "recipient",
+						"type": "address"
+					},
+					{
+						"internalType": "uint256",
+						"name": "amount",
+						"type": "uint256"
+					}
+				],
+				"name": "transfer",
+				"outputs": [
+					{
+						"internalType": "bool",
+						"name": "",
+						"type": "bool"
+					}
+				],
+				"stateMutability": "nonpayable",
+				"type": "function"
+			},
+			{
+				"inputs": [
+					{
+						"internalType": "address",
+						"name": "sender",
+						"type": "address"
+					},
+					{
+						"internalType": "address",
+						"name": "recipient",
+						"type": "address"
+					},
+					{
+						"internalType": "uint256",
+						"name": "amount",
+						"type": "uint256"
+					}
+				],
+				"name": "transferFrom",
+				"outputs": [
+					{
+						"internalType": "bool",
+						"name": "",
+						"type": "bool"
+					}
+				],
+				"stateMutability": "nonpayable",
+				"type": "function"
+			}
+		],
+		"devdoc": {
+			"kind": "dev",
+			"methods": {},
+			"version": 1
+		},
+		"userdoc": {
+			"kind": "user",
+			"methods": {},
+			"version": 1
+		}
+	},
+	"settings": {
+		"compilationTarget": {
+			"Clase I/contracts/ERC20.sol": "ERC20"
+		},
+		"evmVersion": "shanghai",
+		"libraries": {},
+		"metadata": {
+			"bytecodeHash": "ipfs"
+		},
+		"optimizer": {
+			"enabled": false,
+			"runs": 200
+		},
+		"remappings": []
+	},
+	"sources": {
+		"Clase I/contracts/ERC20.sol": {
+			"keccak256": "0x38b0ef306ebeaf270efaee4b5e20da7852e3a36bf063f508e9df248a5a771c62",
+			"license": "MIT",
+			"urls": [
+				"bzz-raw://49d7b5dfdf41c198af47dabc82950bdf776ecf25d6f991e72a591b64557361ac",
+				"dweb:/ipfs/QmbD5uHSCTez1xrkL1ETXW4P2fQLYefRRuJgd51biZ9FTM"
+			]
+		},
+		"Clase I/contracts/IERC20.sol": {
+			"keccak256": "0xb5e58b9929f5a4bd692eb8b43b3168117dd4b0da6d349dad66bbed546a8ff60d",
+			"license": "MIT",
+			"urls": [
+				"bzz-raw://88f60fe52cd6fa4b3bfa55b4ea4f27a0d23b910b5a955899f47945b86ea0f806",
+				"dweb:/ipfs/QmcGSoYYhs6YSTpkZE1Y6DBqcdaT5w6Ra9PfacrVSqAYzi"
+			]
+		}
+	},
+	"version": 1
+}
