@@ -3,9 +3,9 @@ from web3.contract.contract import Contract
 import json
 
 # Get the RPC wss endpoint from alchemy for polygon mainnet
-provider_url = "wss://polygon-mainnet.g.alchemy.com/v2/sExjDUrCgYRxg1GbFGTBogbdSQtT5d3M"
+provider_url = "wss://polygon-mainnet.g.alchemy.com/v2/CIbzNnYgUgzchulujOTtzhVAdIdIG_n4"
 
-w3 = Web3(Web3.WebsocketProvider(provider_url))
+w3 = Web3(Web3.LegacyWebSocketProvider(provider_url))
 
 ## Interfaz!
 class Token:
