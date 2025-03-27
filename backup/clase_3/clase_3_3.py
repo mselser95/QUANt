@@ -1,11 +1,16 @@
+import json
 import asyncio
 
 from web3 import AsyncWeb3
-from web3.providers import WebsocketProviderV2
-from web3.middleware import async_geth_poa_middleware
 from web3.contract.contract import Contract
 
-import json
+# Required to work with most tesnets
+from web3.middleware import ExtraDataToPOAMiddleware
+
+from web3.providers.persistent import (
+    WebSocketProvider,
+)
+
 
 import ccxt
 
@@ -95,10 +100,8 @@ import time
 
 async def ws_v2_subscription_context_manager_example():
 
-    async with AsyncWeb3.persistent_websocket(
-        WebsocketProviderV2(f"wss://polygon-mainnet.g.alchemy.com/v2/sExjDUrCgYRxg1GbFGTBogbdSQtT5d3M")
-    ) as w3:
-        w3.middleware_onion.inject(async_geth_poa_middleware, layer=0)
+    async with AsyncWeb3(WebSocketProvider("wss://polygon-mainnet.g.alchemy.com/v2/CIbzNnYgUgzchulujOTtzhVAdIdIG_n4")) as w3:
+        w3.middleware_onion.inject(ExtraDataToPOAMiddleware, layer=0)
 
         sushi_exchange = AsyncUNIV2Exchange(
             factory_address = "0xc35DADB65012eC5796536bD9864eD8773aBc74C4",
@@ -118,16 +121,25 @@ async def ws_v2_subscription_context_manager_example():
         )
 
         pair_contract = w3.eth.contract(abi=json.load(open("pair_abi.json")))
-        event_signature_hash = AsyncWeb3.keccak(text="Swap(address,uint256,uint256,uint256,uint256,address)").hex()
 
-        subscription_id = await w3.eth.subscribe("logs",{
-            "address": [],
-            "topics": [event_signature_hash,
-                       ]
-        })
+        event_signature_hash = w3.keccak(text="Swap(address,uint256,uint256,uint256,uint256,address)").hex()
+        print("subscribing...")
+        filter_params = {"topics": [event_signature_hash]}
+
+        ## to see more action
+        transfer_event_topic = w3.keccak(text="Transfer(address,address,uint256)")
+        filter_params = {
+            "topics": [transfer_event_topic],
+        }
+
+
+        subscription_id = await w3.eth.subscribe("logs",filter_params)
+        print(f"Subscribing to swap events events {subscription_id}")
+
         i = 0
-        async for response in w3.ws.listen_to_websocket():
-            tx_hash = response["result"]["transactionHash"].hex()
+        async for payload in w3.socket.process_subscriptions():
+            result = payload["result"]
+            print(result)
             #start_time = time.time()
             #receipt = await w3.eth.get_transaction_receipt(tx_hash) # this takes waaaay to long
             #print(time.time() - start_time)

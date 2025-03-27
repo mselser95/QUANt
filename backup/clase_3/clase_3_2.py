@@ -1,11 +1,16 @@
+import json
 import asyncio
 
 from web3 import AsyncWeb3
-from web3.providers import WebsocketProviderV2
-from web3.middleware import async_geth_poa_middleware
 from web3.contract.contract import Contract
 
-import json
+# Required to work with most tesnets
+from web3.middleware import ExtraDataToPOAMiddleware
+
+from web3.providers.persistent import (
+    WebSocketProvider,
+)
+
 
 import ccxt
 
@@ -94,10 +99,8 @@ class AsyncUNIV2Exchange():
 
 async def ws_v2_subscription_context_manager_example():
 
-    async with AsyncWeb3.persistent_websocket(
-        WebsocketProviderV2(f"wss://polygon-mainnet.g.alchemy.com/v2/sExjDUrCgYRxg1GbFGTBogbdSQtT5d3M")
-    ) as w3:
-        w3.middleware_onion.inject(async_geth_poa_middleware, layer=0)
+    async with AsyncWeb3(WebSocketProvider("wss://polygon-mainnet.g.alchemy.com/v2/CIbzNnYgUgzchulujOTtzhVAdIdIG_n4")) as w3:
+        w3.middleware_onion.inject(ExtraDataToPOAMiddleware, layer=0)
 
         sushi_exchange = AsyncUNIV2Exchange(
             factory_address = "0xc35DADB65012eC5796536bD9864eD8773aBc74C4",
@@ -118,7 +121,7 @@ async def ws_v2_subscription_context_manager_example():
         # subscribe to new block headers
         subscription_id = await w3.eth.subscribe("newHeads")
         i = 0
-        async for response in w3.ws.listen_to_websocket():
+        async for response in w3.socket.process_subscriptions():
             data = response['result']
             block_number = data["number"]
             block_hash = data["hash"]
