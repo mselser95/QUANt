@@ -1,8 +1,8 @@
 import asyncio
 
 from web3 import AsyncWeb3
-from web3.providers import LegacyWebSocketProvider
-from web3.middleware import async_geth_poa_middleware
+from web3.providers import WebSocketProvider
+from web3.middleware import ExtraDataToPOAMiddleware
 from web3.contract.contract import Contract
 
 import json
@@ -94,52 +94,51 @@ class AsyncUNIV2Exchange():
 
 async def ws_v2_subscription_context_manager_example():
 
-    async with AsyncWeb3.persistent_websocket(
-        LegacyWebSocketProvider(f"wss://polygon-mainnet.g.alchemy.com/v2/sExjDUrCgYRxg1GbFGTBogbdSQtT5d3M")
-    ) as w3:
-        w3.middleware_onion.inject(async_geth_poa_middleware, layer=0)
+    provider = WebSocketProvider(f"wss://polygon-mainnet.g.alchemy.com/v2/jL3EhrckZEmoV8K0ZQUSiGRQ67PkOakn")
+    w3 = AsyncWeb3(provider)
+    await w3.provider.connect()
+    w3.middleware_onion.inject(ExtraDataToPOAMiddleware, layer=0)
 
-        sushi_exchange = AsyncUNIV2Exchange(
-            factory_address = "0xc35DADB65012eC5796536bD9864eD8773aBc74C4",
-            factory_abi = json.load(open("factory_abi.json")),
-            router_abi = json.load(open("router_abi.json")),
-            router_address="0x1b02dA8Cb0d097eB8D57A175b88c7D8b47997506",
-            pair_abi = json.load(open("pair_abi.json")),
-            w3=w3
-        )
-        quickswap_exchange = AsyncUNIV2Exchange(
-            factory_address = "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
-            factory_abi = json.load(open("factory_abi.json")),
-            router_abi = json.load(open("router_abi.json")),
-            router_address="0xa5E0829CaCEd8fFDD4De3c43696c57F7D7A678ff",
-            pair_abi = json.load(open("pair_abi.json")),
-            w3=w3
-        )
-        # subscribe to new block headers
-        subscription_id = await w3.eth.subscribe("newHeads")
-        i = 0
-        async for response in w3.ws.listen_to_websocket():
-            data = response['result']
-            block_number = data["number"]
-            block_hash = data["hash"]
-            block_info = await w3.eth.get_block(block_hash)
-            print("-"*30)
-            print(f"New Block: {block_number}. Number of transactions: {len(block_info.transactions)}")
-            print(f"""Prices:
-                  Sushiswap: {await sushi_exchange.get_current_price(base_token=usdc_token,quote_token=weth_token)}
-                  Quickswap: {await quickswap_exchange.get_current_price(base_token=usdc_token,quote_token=weth_token)}
-                  Binance us: {binance_us.fetch_ticker(symbol='ETH/USDC')['vwap']}
-                  Bitmex: {bitmex.fetch_ticker(symbol='ETHUSD')['vwap']}
-                  """)
-            # handle responses here
-            if i == 5:
-            #    # unsubscribe from new block headers and break out of
-            #    # iterator
-                await w3.eth.unsubscribe(subscription_id)
-                break
-            i += 1
+    sushi_exchange = AsyncUNIV2Exchange(
+        factory_address = "0xc35DADB65012eC5796536bD9864eD8773aBc74C4",
+        factory_abi = json.load(open("factory_abi.json")),
+        router_abi = json.load(open("router_abi.json")),
+        router_address="0x1b02dA8Cb0d097eB8D57A175b88c7D8b47997506",
+        pair_abi = json.load(open("pair_abi.json")),
+        w3=w3
+    )
+    quickswap_exchange = AsyncUNIV2Exchange(
+        factory_address = "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        factory_abi = json.load(open("factory_abi.json")),
+        router_abi = json.load(open("router_abi.json")),
+        router_address="0xa5E0829CaCEd8fFDD4De3c43696c57F7D7A678ff",
+        pair_abi = json.load(open("pair_abi.json")),
+        w3=w3
+    )
+    # subscribe to new block headers
+    subscription_id = await w3.eth.subscribe("newHeads")
+    i = 0
+    async for response in w3.socket.process_subscriptions():
+        data = response['result']
+        block_number = data["number"]
+        block_hash = data["hash"]
+        block_info = await w3.eth.get_block(block_hash)
+        print("-"*30)
+        print(f"New Block: {block_number}. Number of transactions: {len(block_info.transactions)}")
+        print(f"""Prices:
+              Sushiswap: {await sushi_exchange.get_current_price(base_token=usdc_token,quote_token=weth_token)}
+              Quickswap: {await quickswap_exchange.get_current_price(base_token=usdc_token,quote_token=weth_token)}
+              Binance us: {binance_us.fetch_ticker(symbol='ETH/USDC')['vwap']}
+              Bitmex: {bitmex.fetch_ticker(symbol='ETHUSD')['vwap']}
+              """)
+        # handle responses here
+        if i == 5:
+        #    # unsubscribe from new block headers and break out of
+        #    # iterator
+            await w3.eth.unsubscribe(subscription_id)
+            break
+        i += 1
 
-        # the connection closes automatically when exiting the context
-        # manager (the `async with` block)
+    await w3.provider.disconnect()
 
 asyncio.run(ws_v2_subscription_context_manager_example())
