@@ -1,0 +1,8 @@
+# Verified with Python 3.15.0 (module 1, class 1 notebooks)
+numpy==2.5.4
+pandas==3.0.6
+matplotlib==3.11.2
+seaborn==0.13.2
+requests==2.34.2
+jupyter
+ipykernel==7.4.0

@@ -1,1 +1,3 @@
 /modulo-2/backup/
+.venv/
+__pycache__/
