@@ -1,148 +1,77 @@
+import argparse
 import asyncio
+import json
+import os
+from pathlib import Path
 
 from web3 import AsyncWeb3
-from web3.providers import LegacyWebSocketProvider
-from web3.middleware import async_geth_poa_middleware
-from web3.contract.contract import Contract
+from web3.providers.persistent import WebSocketProvider
+from web3.middleware import ExtraDataToPOAMiddleware
 
-import json
+HERE = Path(__file__).parent
 
-import ccxt
+# Endpoint WebSocket de Polygon. Por defecto un nodo publico SIN API key;
+# para usar el propio (Alchemy, Infura, etc.) exportar la variable de entorno:
+#   export WSS_URL_POLYGON="wss://..."   (nunca pegar la key en el codigo)
+WSS_URL_POLYGON = os.environ.get("WSS_URL_POLYGON", "wss://polygon-bor-rpc.publicnode.com")
 
-binance_us = ccxt.binanceus()
-bitmex = ccxt.bitmex()
-
-class Token:
-    def __init__(self, address: str, decimals: int, name: str) -> None:
-        self.address = address
-        self.decimals = decimals
-        self.name = name
-    
-    def get_token_amount(self, amount:int) -> int:
-        return amount * 10 ** self.decimals
-    
-usdc_token = Token(
-    address = "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174",
-    decimals = 6,
-    name = "USDC"
-)
-
-weth_token = Token(
-    address = "0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619",
-    decimals = 18,
-    name = "wETH"
-)
-    
-class AsyncUNIV2Exchange():
-
-    def __init__(
-        self,
-        factory_address: str,
-        factory_abi: list,
-        router_address: str,
-        router_abi: list,
-        pair_abi: list,
-        w3
-         ):
-        super().__init__()
-        self.w3 = w3
-        self.router_contract: Contract = self.w3.eth.contract(address=router_address, abi=router_abi)
-        self.factory_contract: Contract = self.w3.eth.contract(address=factory_address, abi=factory_abi)
-        self.pair_abi = pair_abi
+SWAP_SIGNATURE = "Swap(address,uint256,uint256,uint256,uint256,address)"
 
 
-    async def get_output_amount(self, input_amount:int, input_token: Token, output_token: Token) -> float:
-        #function getAmountsOut(uint amountIn, address[] memory path) public view returns (uint[] memory amounts);
-        hex_address = [
-            self.w3.to_checksum_address(input_token.address),
-            self.w3.to_checksum_address(output_token.address),
-        ]
-        amounts_out = await self.router_contract.functions.getAmountsOut(input_amount, hex_address).call()
-        return amounts_out[-1] / (10 ** output_token.decimals)
+async def run(args, deadline_s: float) -> None:
+    """Una sesion de conexion: escucha eventos Swap de CUALQUIER pool tipo UniswapV2."""
+    async with AsyncWeb3(WebSocketProvider(WSS_URL_POLYGON)) as w3:
+        # Polygon es PoA: el extraData del header es mas largo que en Ethereum
+        w3.middleware_onion.inject(ExtraDataToPOAMiddleware, layer=0)
 
+        pair_contract = w3.eth.contract(abi=json.load(open(HERE / "pair_abi.json")))
+        event_signature_hash = AsyncWeb3.keccak(text=SWAP_SIGNATURE).to_0x_hex()
 
-    async def swap(self, input_token: Token, output_token: Token) -> bool:
-        pass
-
-    async def get_current_price(self, base_token: Token, quote_token: Token) -> float:
-        # Precio = Reservas del base token / Reservas del quote token
-        # Pools UNIV2 (AMM de producto constante)
-
-        #function getPair(address tokenA, address tokenB) external view returns (address pair);
-        pair_address = await self.factory_contract.functions.getPair(base_token.address, quote_token.address).call()
-        pair_contract = self.w3.eth.contract(address=pair_address, abi=self.pair_abi)
-
-        # function token0() external view returns (address);
-        token0_address = await pair_contract.functions.token0().call()
-        # function token1() external view returns (address);
-        token1_address = await pair_contract.functions.token1().call()
-        # function getReserves() external view returns (uint112 reserve0, uint112 reserve1, uint32 blockTimestampLast);
-
-        reserves = await pair_contract.functions.getReserves().call()
-        token_0_reserves = reserves[0]
-        token_1_reserves = reserves[1]
-        
-        if token0_address == base_token.address:
-            base_token_reserves = token_0_reserves / 10 ** base_token.decimals
-            quote_token_reserves = token_1_reserves / 10 ** quote_token.decimals
-        else:
-            base_token_reserves = token_1_reserves / 10 ** base_token.decimals
-            quote_token_reserves = token_0_reserves / 10 ** quote_token.decimals
-            
-        return base_token_reserves / quote_token_reserves
-
-import time
-
-async def ws_v2_subscription_context_manager_example():
-
-    async with AsyncWeb3.persistent_websocket(
-        WebsocketProviderV2(f"wss://polygon-mainnet.g.alchemy.com/v2/***REMOVED***")
-    ) as w3:
-        w3.middleware_onion.inject(async_geth_poa_middleware, layer=0)
-
-        sushi_exchange = AsyncUNIV2Exchange(
-            factory_address = "0xc35DADB65012eC5796536bD9864eD8773aBc74C4",
-            factory_abi = json.load(open("factory_abi.json")),
-            router_abi = json.load(open("router_abi.json")),
-            router_address="0x1b02dA8Cb0d097eB8D57A175b88c7D8b47997506",
-            pair_abi = json.load(open("pair_abi.json")),
-            w3=w3
-        )
-        quickswap_exchange = AsyncUNIV2Exchange(
-            factory_address = "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
-            factory_abi = json.load(open("factory_abi.json")),
-            router_abi = json.load(open("router_abi.json")),
-            router_address="0xa5E0829CaCEd8fFDD4De3c43696c57F7D7A678ff",
-            pair_abi = json.load(open("pair_abi.json")),
-            w3=w3
-        )
-
-        pair_contract = w3.eth.contract(abi=json.load(open("pair_abi.json")))
-        event_signature_hash = AsyncWeb3.keccak(text="Swap(address,uint256,uint256,uint256,uint256,address)").hex()
-
-        subscription_id = await w3.eth.subscribe("logs",{
-            "address": [],
-            "topics": [event_signature_hash,
-                       ]
+        # address vacio = todos los contratos; filtramos solo por el topic0 del evento Swap
+        subscription_id = await w3.eth.subscribe("logs", {
+            "topics": [event_signature_hash],
         })
-        i = 0
-        async for response in w3.ws.listen_to_websocket():
-            tx_hash = response["result"]["transactionHash"].hex()
-            #start_time = time.time()
-            #receipt = await w3.eth.get_transaction_receipt(tx_hash) # this takes waaaay to long
-            #print(time.time() - start_time)
-            #print(pair_contract.events.Swap().process_receipt(receipt))
-                
-
-            # handle responses here
-            if i == 5:
-            #    # unsubscribe from new block headers and break out of
-            #    # iterator
-                await w3.eth.unsubscribe(subscription_id)
-                break
-            i += 1
-
+        try:
+            async with asyncio.timeout(deadline_s):
+                async for response in w3.socket.process_subscriptions():
+                    log = response["result"]
+                    tx_hash = log["transactionHash"].to_0x_hex()
+                    # Decodificamos el evento directo del log recibido. Pedir el receipt
+                    # (w3.eth.get_transaction_receipt) por cada swap tarda mucho mas.
+                    swap = pair_contract.events.Swap().process_log(log)
+                    a = swap["args"]
+                    print(f"Swap en pool {log['address']} (bloque {log['blockNumber']}) tx {tx_hash}")
+                    print(f"    amount0In={a['amount0In']} amount1In={a['amount1In']} "
+                          f"amount0Out={a['amount0Out']} amount1Out={a['amount1Out']}")
+                    args.done += 1
+                    if args.done >= args.events:
+                        # unsubscribe from logs and break out of iterator
+                        await w3.eth.unsubscribe(subscription_id)
+                        break
+        except TimeoutError:
+            print(f"Tiempo maximo alcanzado ({args.seconds} s). Eventos procesados: {args.done}")
         # the connection closes automatically when exiting the context
         # manager (the `async with` block)
 
-asyncio.run(ws_v2_subscription_context_manager_example())
+
+async def main(args) -> int:
+    loop = asyncio.get_running_loop()
+    end = loop.time() + args.seconds
+    args.done = 0
+    for attempt in (1, 2):  # si la conexion se cae, reconectamos UNA vez
+        try:
+            await run(args, max(end - loop.time(), 1))
+            return 0
+        except Exception as e:
+            print(f"Conexion perdida ({type(e).__name__}: {str(e)[:80]}). "
+                  f"{'Reintentando...' if attempt == 1 else 'Saliendo.'}")
+            if attempt == 2 or loop.time() >= end:
+                break
+    return 0 if args.done > 0 else 1
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Stream de eventos Swap (UniswapV2-style) en Polygon")
+    parser.add_argument("--events", type=int, default=int(os.environ.get("EVENTS", 5)), help="parar tras N swaps")
+    parser.add_argument("--seconds", type=int, default=int(os.environ.get("SECONDS_MAX", 45)), help="tiempo maximo")
+    raise SystemExit(asyncio.run(main(parser.parse_args())))
