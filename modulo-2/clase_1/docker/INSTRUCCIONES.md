@@ -38,7 +38,7 @@ docker build -t chain-api .
 ```
 
 - `-t chain-api` le pone nombre a la imagen; el `.` es la carpeta con el `Dockerfile`.
-- La primera vez tarda (~20 s): baja dependencias. Ver la imagen creada: `docker images chain-api`
+- La primera vez tarda (~30 s): baja dependencias. Ver la imagen creada: `docker images chain-api`
 
 **Probar la caché de capas:** cambiar cualquier cosa en `app.py` y volver a correr `docker build -t chain-api .`.
 El paso `RUN pip install` aparece como `CACHED`: solo se rehace desde `COPY app.py`. Por eso el
@@ -58,6 +58,9 @@ docker run --rm -d --name chain-api -p 8000:8000 chain-api
 | `--rm` | borra el container cuando se detiene |
 
 Sin configurar nada usa un nodo **público de Polygon** sin API key.
+
+Tarda ~1 segundo en arrancar: un `curl` inmediato puede dar `Connection reset by peer`. Está listo
+cuando `docker logs chain-api` muestra `Uvicorn running on http://0.0.0.0:8000`.
 
 ## 4. Consultarlo
 
@@ -125,7 +128,11 @@ archivo que no se sube a git:
 ```bash
 echo 'RPC_URL=https://polygon-mainnet.g.alchemy.com/v2/TU_KEY' > .env    # .env está en .dockerignore
 docker run --rm -d --name my-api -p 8002:8000 --env-file .env chain-api
+curl localhost:8002/health      # con TU_KEY de ejemplo: 503 "401 Unauthorized" (con una key real, chain_id 137)
 ```
+
+El `.env` está en `.dockerignore` (no entra a la imagen) **y** en el `.gitignore` del repo (no se
+commitea): una key en un archivo que se sube a git queda en la historia aunque después se borre.
 
 Nunca `ENV RPC_URL=...con la key...` en el `Dockerfile`: queda dentro de la imagen y cualquiera que
 la tenga la lee con `docker history` / `docker inspect`.
@@ -133,7 +140,7 @@ la tenga la lee con `docker history` / `docker inspect`.
 ## 7. Apagar y limpiar
 
 ```bash
-docker stop chain-api eth-api      # con --rm, se borran solos al detenerse
+docker stop chain-api eth-api my-api   # con --rm, se borran solos al detenerse
 docker ps -a                       # verificar que no quedó nada
 docker rmi chain-api               # (opcional) borrar la imagen
 ```

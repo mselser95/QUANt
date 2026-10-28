@@ -1,3 +1,5 @@
 /modulo-2/backup/
 .venv/
 __pycache__/
+# secrets (API keys, RPC URLs with keys): never committed
+.env
