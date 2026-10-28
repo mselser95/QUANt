@@ -7,6 +7,8 @@ match the stored one (anvil restarted, or a reorg), it starts over.
 Configuration (environment variables):
   WS_URL         websocket endpoint of the node (default: ws://anvil:8545, the compose service)
   DATABASE_URL   Postgres connection string
+  START_BLOCK    first block when the database is empty: a number, or "latest" (default 0).
+                 Use "latest" on a real chain: Polygon has ~100 million blocks
 """
 import asyncio
 import os
@@ -17,6 +19,7 @@ from web3.middleware import ExtraDataToPOAMiddleware
 
 WS_URL = os.environ.get("WS_URL", "ws://anvil:8545")
 DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql://quant:quant@postgres:5432/chain")
+START_BLOCK = os.environ.get("START_BLOCK", "0")
 TRANSFER_TOPIC = Web3.keccak(text="Transfer(address,address,uint256)").to_0x_hex()
 
 SCHEMA = """
@@ -68,17 +71,22 @@ async def index_block(w3, db, number):
     return len(block["transactions"]), len(logs)
 
 
+async def first_block(w3):
+    # Where to start on an empty database (START_BLOCK)
+    return await w3.eth.block_number if START_BLOCK == "latest" else int(START_BLOCK)
+
+
 async def resume_point(w3, db):
     # Next block to index; wipes the tables if the stored chain is not the node's chain
     last = db.execute("SELECT number, hash FROM blocks ORDER BY number DESC LIMIT 1").fetchone()
     if last is None:
-        return 0
+        return await first_block(w3)
     head = await w3.eth.block_number
     same_chain = last[0] <= head and (await w3.eth.get_block(last[0]))["hash"].to_0x_hex() == last[1]
     if not same_chain:
-        print(f"stored block {last[0]} is not on this chain (node restarted or reorg): re-indexing from 0", flush=True)
+        print(f"stored block {last[0]} is not on this chain (node restarted or reorg): starting over", flush=True)
         db.execute("TRUNCATE blocks CASCADE")
-        return 0
+        return await first_block(w3)
     return last[0] + 1
 
 

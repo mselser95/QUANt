@@ -4,7 +4,7 @@
 #   deployer   deploys QuantToken (contracts/QuantToken.sol) and makes 3 transfers, then exits
 #   postgres   database for the indexer
 #   indexer    stores every block and ERC-20 Transfer in Postgres
-#   chain-api  the image from chain-api/, pointed at anvil instead of Polygon
+#   chain-api  the image from class 4 (modulo-2/clase_1/docker/chain-api), pointed at anvil
 #   adminer    web UI for the database
 #
 # Inside the compose network services reach each other BY NAME (http://anvil:8545, postgres:5432).
@@ -60,7 +60,7 @@ services:
     restart: unless-stopped
 
   chain-api:
-    build: ./chain-api
+    build: ../../clase_1/docker/chain-api   # the image from class 4
     environment:
       RPC_URL: http://anvil:8545
     ports:
