@@ -3,3 +3,5 @@
 __pycache__/
 # secrets (API keys, RPC URLs with keys): never committed
 .env
+# local virtualenvs inside class folders
+env/

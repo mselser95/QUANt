@@ -42,8 +42,11 @@ hace falta ninguna private key. Cada vez que se reinicia, la chain vuelve a cero
 ```bash
 cd modulo-2/clase_2/docker
 docker compose up -d --build       # construye las imágenes y levanta todo en segundo plano
-docker compose ps -a               # estado: anvil y postgres "healthy", deployer "Exited (0)"
+docker compose ps -a               # anvil y postgres "healthy"; a los ~10 s el deployer pasa a "Exited (0)"
 ```
+
+La primera vez tarda más: baja las imágenes base y construye tres (depende de la conexión). Si `docker compose logs deployer`
+todavía no muestra las 3 transfers, el deployer sigue trabajando: esperar unos segundos.
 
 El orden lo define `depends_on` + `healthcheck`: el deployer, el indexer y la chain-api esperan a
 que anvil responda; el indexer espera también a Postgres.
@@ -113,7 +116,7 @@ contraseña `quant`, base `chain`.
 
 ```bash
 docker compose restart anvil       # la chain vuelve a cero
-docker compose logs indexer        # "stored block N is not on this chain ... re-indexing from 0"
+docker compose logs indexer        # "stored block N is not on this chain (...): starting over"
 docker compose up deployer         # volver a deployar el token (misma dirección)
 ```
 
@@ -149,7 +152,8 @@ La tarea de hoy pide reaccionar a cada **swap** de un par. El indexer ya tiene l
 suscripción a bloques nuevos, `get_logs` por topic y escritura en una base. Cambiar el topic de
 `Transfer` por el de `Swap(address,uint256,uint256,uint256,uint256,address)` (ver
 `modulo-2/clase_3/clase_3_3.py`) y apuntar el indexer a Polygon es el primer paso. Para probar el
-indexer actual contra Polygon real (con `START_BLOCK=latest`: Polygon tiene ~100 millones de bloques):
+indexer actual contra Polygon real, con el stack levantado (`START_BLOCK=latest`: Polygon tiene ~100 millones
+de bloques):
 
 ```bash
 docker compose stop indexer        # el indexer local y este escribirían en la misma base y se borrarían
