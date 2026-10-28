@@ -1,0 +1,83 @@
+# Local blockchain stack:  docker compose up -d --build   (from this folder)
+#
+#   anvil      local EVM chain (Foundry), a block every 2 s, 10 funded and unlocked test accounts
+#   deployer   deploys QuantToken (contracts/QuantToken.sol) and makes 3 transfers, then exits
+#   postgres   database for the indexer
+#   indexer    stores every block and ERC-20 Transfer in Postgres
+#   chain-api  the image from chain-api/, pointed at anvil instead of Polygon
+#   adminer    web UI for the database
+#
+# Inside the compose network services reach each other BY NAME (http://anvil:8545, postgres:5432).
+# Host ports (left side of "ports") can be changed in .env if they are taken on your machine.
+
+name: quant-chain
+
+services:
+  anvil:
+    image: ghcr.io/foundry-rs/foundry:v1.5.1
+    command: ["anvil --host 0.0.0.0 --block-time 2"]   # the image's entrypoint is `sh -c`
+    ports:
+      - "${ANVIL_PORT:-8546}:8545"
+    healthcheck:
+      test: ["CMD", "cast", "block-number", "--rpc-url", "http://localhost:8545"]
+      interval: 2s
+      retries: 15
+
+  deployer:
+    build: ./deployer
+    environment:
+      RPC_URL: http://anvil:8545
+    volumes:
+      - shared:/shared          # writes token.json (the deployed address) for transfer.py
+    depends_on:
+      anvil:
+        condition: service_healthy
+    restart: "no"
+
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: quant
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-quant}   # local demo only
+      POSTGRES_DB: chain
+    volumes:
+      - pgdata:/var/lib/postgresql/data   # the data survives `docker compose down` (not `down -v`)
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "quant", "-d", "chain"]
+      interval: 2s
+      retries: 15
+
+  indexer:
+    build: ./indexer
+    environment:
+      WS_URL: ws://anvil:8545
+      DATABASE_URL: postgresql://quant:${POSTGRES_PASSWORD:-quant}@postgres:5432/chain
+    depends_on:
+      anvil:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  chain-api:
+    build: ./chain-api
+    environment:
+      RPC_URL: http://anvil:8545
+    ports:
+      - "${CHAIN_API_PORT:-8001}:8000"
+    depends_on:
+      anvil:
+        condition: service_healthy
+
+  adminer:
+    image: adminer:5
+    environment:
+      ADMINER_DEFAULT_SERVER: postgres
+    ports:
+      - "${ADMINER_PORT:-8088}:8080"
+    depends_on:
+      - postgres
+
+volumes:
+  shared:
+  pgdata:
