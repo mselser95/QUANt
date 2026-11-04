@@ -1,0 +1,89 @@
+# Arbitrage monitor:  docker compose up -d --build   (from this folder)
+#
+#   postgres   database (schema in postgres/init.sql)
+#   collector  every new Polygon block: reads 8 pools in ONE Multicall3 call and stores them
+#   detector   every stored block: evaluates the arbitrage cycles with the closed form of the notebook
+#   grafana    dashboard (no login), reads Postgres
+#   adminer    web UI for raw SQL
+#
+# Host ports (left side of "ports") can be changed in .env if they are taken on your machine.
+
+name: quant-arb
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: quant
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-quant}   # local demo only
+      POSTGRES_DB: arb
+    volumes:
+      - pgdata:/var/lib/postgresql/data   # survives `docker compose down` (not `down -v`)
+      - ./postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "quant", "-d", "arb"]
+      interval: 2s
+      retries: 15
+
+  collector:
+    build: ./collector
+    environment:
+      RPC_URL: ${RPC_URL:-https://polygon-bor-rpc.publicnode.com}
+      DATABASE_URL: postgresql://quant:${POSTGRES_PASSWORD:-quant}@postgres:5432/arb
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      # the collector touches /tmp/healthy after every stored block: healthy = a block in the last minute
+      test: ["CMD-SHELL", "find /tmp/healthy -mmin -1 | grep -q ."]
+      interval: 5s
+      start_period: 60s
+      retries: 3
+    restart: unless-stopped
+
+  detector:
+    build: ./detector
+    environment:
+      DATABASE_URL: postgresql://quant:${POSTGRES_PASSWORD:-quant}@postgres:5432/arb
+    depends_on:
+      collector:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "find /tmp/healthy -mmin -1 | grep -q ."]
+      interval: 5s
+      start_period: 30s
+      retries: 3
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana-oss:11.6.0
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/arbitrage.json
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-quant}
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - "${GRAFANA_PORT:-3030}:3000"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/api/health | grep -q ok"]
+      interval: 5s
+      retries: 20
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  adminer:
+    image: adminer:5
+    environment:
+      ADMINER_DEFAULT_SERVER: postgres
+    ports:
+      - "${ADMINER_PORT:-8089}:8080"
+    depends_on:
+      - postgres
+
+volumes:
+  pgdata:

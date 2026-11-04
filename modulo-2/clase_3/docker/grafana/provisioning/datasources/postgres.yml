@@ -1,0 +1,16 @@
+apiVersion: 1
+datasources:
+  - name: Arb
+    uid: arb-postgres
+    type: grafana-postgresql-datasource
+    access: proxy
+    url: postgres:5432
+    user: quant
+    isDefault: true
+    secureJsonData:
+      password: ${POSTGRES_PASSWORD}
+    jsonData:
+      database: arb
+      sslmode: disable
+      postgresVersion: 1700
+      timescaledb: false
