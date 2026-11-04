@@ -14,7 +14,9 @@ import asyncio
 import os
 
 import psycopg
+from websockets.exceptions import ConnectionClosed
 from web3 import AsyncWeb3, Web3, WebSocketProvider
+from web3.exceptions import BlockNotFound
 from web3.middleware import ExtraDataToPOAMiddleware
 
 WS_URL = os.environ.get("WS_URL", "ws://anvil:8545")
@@ -73,7 +75,9 @@ async def index_block(w3, db, number):
 
 async def first_block(w3):
     # Where to start on an empty database (START_BLOCK)
-    return await w3.eth.block_number if START_BLOCK == "latest" else int(START_BLOCK)
+    if START_BLOCK == "latest":
+        return await w3.eth.block_number
+    return int(START_BLOCK)
 
 
 async def resume_point(w3, db):
@@ -81,21 +85,27 @@ async def resume_point(w3, db):
     last = db.execute("SELECT number, hash FROM blocks ORDER BY number DESC LIMIT 1").fetchone()
     if last is None:
         return await first_block(w3)
+    last_number, last_hash = last
     head = await w3.eth.block_number
-    same_chain = last[0] <= head and (await w3.eth.get_block(last[0]))["hash"].to_0x_hex() == last[1]
+    same_chain = False
+    if last_number <= head:
+        node_block = await w3.eth.get_block(last_number)
+        same_chain = node_block["hash"].to_0x_hex() == last_hash
     if not same_chain:
-        print(f"stored block {last[0]} is not on this chain (node restarted or reorg): starting over", flush=True)
+        print(f"stored block {last_number} is not on this chain (node restarted or reorg): starting over", flush=True)
         db.execute("TRUNCATE blocks CASCADE")
         return await first_block(w3)
-    return last[0] + 1
+    return last_number + 1
 
 
 async def run(db):
     async with AsyncWeb3(WebSocketProvider(WS_URL)) as w3:
-        if await w3.eth.chain_id in (137, 80002):
+        chain_id = await w3.eth.chain_id
+        if chain_id in (137, 80002):
             w3.middleware_onion.inject(ExtraDataToPOAMiddleware, layer=0)
-        start, head = await resume_point(w3, db), await w3.eth.block_number
-        print(f"connected to {WS_URL} (chain {await w3.eth.chain_id}): backfilling blocks {start}..{head}", flush=True)
+        start = await resume_point(w3, db)
+        head = await w3.eth.block_number
+        print(f"connected to {WS_URL} (chain {chain_id}): backfilling blocks {start}..{head}", flush=True)
         for number in range(start, head + 1):
             await index_block(w3, db, number)
 
@@ -115,8 +125,11 @@ async def main():
             with psycopg.connect(DATABASE_URL, autocommit=True) as db:
                 db.execute(SCHEMA)
                 await run(db)
-        except Exception as err:
-            print(f"[WARN] {type(err).__name__}: {str(err)[:150]}; reconnecting in 3 s", flush=True)
+        except (ConnectionClosed, OSError, psycopg.OperationalError, BlockNotFound) as err:
+            # Only connection problems are retried (BlockNotFound: a load-balanced public node announced a
+            # head that the node answering us does not have yet). Any other error is a bug and crashes the
+            # container (compose restarts it, and the traceback stays in `docker compose logs indexer`)
+            print(f"[WARN] lost the node or the database ({type(err).__name__}: {err}); reconnecting in 3 s", flush=True)
             await asyncio.sleep(3)
 
 

@@ -16,8 +16,10 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Callable, Dict, List, Optional
 from urllib.parse import urlparse
 
+import numpy as np
 import pandas as pd
 import requests
+from matplotlib.ticker import FuncFormatter
 
 # ---------------------------------------------------------------------------
 # Chain registry
@@ -146,6 +148,81 @@ def chain_colors(chains) -> List[str]:
     return [CHAINS[c]['color'] if c in CHAINS else '#999999' for c in chains]
 
 
+def layer_of(chain: str) -> str:
+    """'L1', 'L2' or 'Sidechain'."""
+    return CHAINS[chain]['layer']
+
+
+# ---------------------------------------------------------------------------
+# Formatting and plotting helpers
+# ---------------------------------------------------------------------------
+def fmt_usd(value) -> str:
+    """Compact USD formatting: $1.2B, $340.0M, $12.0K."""
+    if value is None or pd.isna(value):
+        return 'n/a'
+    for unit, size in (('B', 1e9), ('M', 1e6), ('K', 1e3)):
+        if abs(value) >= size:
+            return f'${value / size:,.1f}{unit}'
+    return f'${value:,.0f}'
+
+
+def _usd_tick(value, position):
+    return fmt_usd(value)
+
+
+def usd_axis(ax, axis: str = 'x'):
+    """Show the ticks of an axis as $1.2B / $340.0M / $12.0K."""
+    formatter = FuncFormatter(_usd_tick)
+    if axis == 'x':
+        ax.xaxis.set_major_formatter(formatter)
+    else:
+        ax.yaxis.set_major_formatter(formatter)
+
+
+def place_labels(ax, xs, ys, names, fontsize: int = 9):
+    """
+    Greedy non-overlapping labels: for each point try several offsets/radii and keep the first that does not
+    collide with already-placed labels, markers, or leave the axes. Draws a thin leader line for far labels.
+    """
+    xs = np.asarray(xs, dtype=float)
+    ys = np.asarray(ys, dtype=float)
+    names = list(names)
+    fig = ax.figure
+    fig.canvas.draw()
+    renderer = fig.canvas.get_renderer()
+    pts = ax.transData.transform(np.column_stack([xs, ys]))
+    placed = [(x - 8, y - 8, x + 8, y + 8) for x, y in pts]          # markers
+    axbox = ax.get_window_extent(renderer)
+    dirs = [(1, 0, 'left', 'center'), (-1, 0, 'right', 'center'), (0, 1, 'center', 'bottom'), (0, -1, 'center', 'top'),
+            (1, 1, 'left', 'bottom'), (-1, 1, 'right', 'bottom'), (1, -1, 'left', 'top'), (-1, -1, 'right', 'top')]
+    for i in np.argsort(pts[:, 1]):
+        best = None
+        for radius in (9, 16, 26, 38, 54):
+            for dx, dy, ha, va in dirs:
+                t = ax.annotate(names[i], (xs[i], ys[i]), xytext=(dx * radius, dy * radius), textcoords='offset points',
+                                ha=ha, va=va, fontsize=fontsize, fontweight='bold', color='#222222')
+                bb = t.get_window_extent(renderer)
+                t.remove()
+                box = (bb.x0 - 2, bb.y0 - 2, bb.x1 + 2, bb.y1 + 2)
+                clash = 0
+                for p in placed:
+                    if not (box[2] < p[0] or box[0] > p[2] or box[3] < p[1] or box[1] > p[3]):
+                        clash += 1
+                outside = box[0] < axbox.x0 or box[2] > axbox.x1 or box[1] < axbox.y0 or box[3] > axbox.y1
+                score = clash + (5 if outside else 0)
+                if best is None or score < best[0]:
+                    best = (score, dx, dy, ha, va, radius, box)
+                if score == 0:
+                    break
+            if best[0] == 0:
+                break
+        _, dx, dy, ha, va, radius, box = best
+        arrow = dict(arrowstyle='-', color='#888888', lw=0.7) if radius > 16 else None
+        ax.annotate(names[i], (xs[i], ys[i]), xytext=(dx * radius, dy * radius), textcoords='offset points',
+                    ha=ha, va=va, fontsize=fontsize, fontweight='bold', color='#222222', arrowprops=arrow)
+        placed.append(box)
+
+
 # ---------------------------------------------------------------------------
 # HTTP helpers
 # ---------------------------------------------------------------------------
@@ -156,9 +233,26 @@ _last_call_by_host: Dict[str, float] = {}
 _cache: Dict[tuple, object] = {}
 
 
+def _send(method: str, url: str, params: Optional[Dict], json_data, timeout: int):
+    """
+    One HTTP attempt. Returns (status_code, parsed_json, text).
+    This is the ONLY try/except in the module: status_code 0 means the request itself failed
+    (timeout, connection error, body that is not JSON).
+    """
+    try:
+        response = requests.request(method, url, params=params, json=json_data, timeout=timeout)
+        body = response.json() if response.status_code < 400 else None
+        return response.status_code, body, response.text[:150]
+    except (requests.exceptions.RequestException, ValueError) as error:
+        return 0, None, str(error)
+
+
 def api_call(url: str, params: Optional[Dict] = None, method: str = 'GET', json_data=None,
-             max_retries: int = 5, timeout: int = 30, use_cache: bool = True):
-    """GET/POST with retries and exponential backoff on rate limits and network errors. Returns parsed JSON or None."""
+             max_retries: int = 5, timeout: int = 30, use_cache: bool = True, rate_limit_wait: int = 5):
+    """
+    GET/POST with retries. Waits and retries on rate limits (429, exponentially longer) and on network errors;
+    gives up at once on other client errors (4xx). Returns parsed JSON or None.
+    """
     key = (url, tuple(sorted((params or {}).items())))
     if method == 'GET' and use_cache and key in _cache:
         return _cache[key]
@@ -169,64 +263,64 @@ def api_call(url: str, params: Optional[Dict] = None, method: str = 'GET', json_
         if wait > 0:
             time.sleep(wait)
         _last_call_by_host[host] = time.time()
-        try:
-            if method == 'GET':
-                response = requests.get(url, params=params, timeout=timeout)
-            else:
-                response = requests.post(url, json=json_data, timeout=timeout)
-            if response.status_code == 429:
-                backoff = 5 * (2 ** attempt)
-                print(f"[WARNING] Rate limit on {host}. Waiting {backoff}s (retry {attempt + 1}/{max_retries})...")
-                time.sleep(backoff)
-                continue
-            if 400 <= response.status_code < 500:
-                # A client error (bad request, paid endpoint, not found) will not fix itself: don't retry
-                print(f"[ERROR] {host}: HTTP {response.status_code}: {response.text[:150]}")
-                return None
-            response.raise_for_status()
-            data = response.json()
+
+        status, data, text = _send(method, url, params, json_data, timeout)
+        if 0 < status < 400:
             if method == 'GET' and use_cache:
                 _cache[key] = data
             return data
-        except (requests.exceptions.RequestException, ValueError) as error:
-            if attempt == max_retries - 1:
-                print(f"[ERROR] {host}: request failed after {max_retries} attempts: {error}")
-                return None
-            time.sleep(2 * (attempt + 1))
+        if status == 429:
+            backoff = rate_limit_wait * (2 ** attempt)
+            print(f"[WARNING] Rate limit on {host}. Waiting {backoff}s (retry {attempt + 1}/{max_retries})...")
+            time.sleep(backoff)
+        elif status >= 400 and status < 500:
+            # A client error (bad request, paid endpoint, not found) will not fix itself: don't retry
+            print(f"[ERROR] {host}: HTTP {status}: {text}")
+            return None
+        elif attempt < max_retries - 1:
+            time.sleep(2 * (attempt + 1))   # network error or server error: try again
+        else:
+            print(f"[ERROR] {host}: request failed after {max_retries} attempts: {text}")
     return None
 
 
 def json_rpc(url: str, method: str, params: List, retries: int = 3):
     """Minimal JSON-RPC call (EVM or Solana). Returns the 'result' field, or None on failure."""
+    payload = {'jsonrpc': '2.0', 'id': 1, 'method': method, 'params': params}
     for attempt in range(retries):
-        try:
-            response = requests.post(url, json={'jsonrpc': '2.0', 'id': 1, 'method': method, 'params': params}, timeout=15)
-            if response.status_code == 429:
-                time.sleep(2 * (attempt + 1))
-                continue
-            response.raise_for_status()
-            body = response.json()
-            if body.get('result') is not None:
-                return body['result']
-            error = body.get('error') or {}
-            # Transient errors reported inside the JSON body: rate limits, and load-balanced nodes that
-            # are a block behind (Hyperliquid answers -32603 "invalid block height") -> retry
-            if 'rate' in str(error.get('message', '')).lower() or error.get('code') in (-32005, -32603, 429):
-                time.sleep(1 + attempt)
-                continue
-            if error:
-                return None  # the node answered: the method or tag is not supported
-        except (requests.exceptions.RequestException, ValueError):
-            time.sleep(2 * (attempt + 1))
+        body = api_call(url, method='POST', json_data=payload, max_retries=2, timeout=15, rate_limit_wait=2)
+        if not isinstance(body, dict):
+            return None   # api_call already printed why
+        if body.get('result') is not None:
+            return body['result']
+        error = body.get('error') or {}
+        # Transient errors reported inside the JSON body: rate limits, and load-balanced nodes that
+        # are a block behind (Hyperliquid answers -32603 "invalid block height") -> retry
+        if 'rate' in str(error.get('message', '')).lower() or error.get('code') in (-32005, -32603, 429):
+            time.sleep(1 + attempt)
+        else:
+            return None  # the node answered: the method or tag is not supported
     return None
 
 
-def for_each_chain(fn: Callable[[str], Optional[Dict]], chains=None, workers: int = 6) -> List[Dict]:
-    """Run fn(chain_name) for every chain in parallel (each chain has its own endpoint). Drops failures."""
+def for_each_chain(fn: Callable[[str], Optional[object]], chains=None, workers: int = 6) -> List:
+    """
+    Run fn(chain_name) for every chain in parallel (each chain has its own endpoint).
+    fn returns None when a chain has no data; those chains are named in ONE warning line and left out of the result.
+    """
     chains = list(chains or CHAINS)
     with ThreadPoolExecutor(max_workers=workers) as pool:
         results = list(pool.map(fn, chains))
-    return [r for r in results if r]
+    found = []
+    failed = []
+    for chain, result in zip(chains, results):
+        if result is None:
+            failed.append(chain)
+        else:
+            found.append(result)
+    if failed:
+        print(f"[WARNING] {fn.__name__}: no data for {', '.join(failed)}")
+    return found
 
 
 # ---------------------------------------------------------------------------

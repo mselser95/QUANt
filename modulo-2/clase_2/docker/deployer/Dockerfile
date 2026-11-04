@@ -5,5 +5,5 @@ ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
 WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-COPY QuantToken.json deploy.py transfer.py ./
+COPY QuantToken.json common.py deploy.py transfer.py ./
 CMD ["python", "deploy.py"]

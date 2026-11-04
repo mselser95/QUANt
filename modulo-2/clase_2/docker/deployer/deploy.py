@@ -3,34 +3,14 @@
 anvil starts with 10 accounts full of test ETH and UNLOCKED: the node signs for them, so this
 script needs no private key (on a real network you sign locally, as in web3.ipynb section 6).
 
-Configuration (environment variables):
-  RPC_URL      node to deploy to (default: http://anvil:8545, the compose service)
-  SHARED_DIR   where the deployed address is written for transfer.py (default: /shared)
+Settings (RPC_URL, SHARED_DIR) live in common.py.
 """
 import json
-import os
-import time
-from pathlib import Path
 
-from web3 import Web3
-
-RPC_URL = os.environ.get("RPC_URL", "http://anvil:8545")
-SHARED_DIR = Path(os.environ.get("SHARED_DIR", "/shared"))
-ARTIFACT = json.loads((Path(__file__).parent / "QuantToken.json").read_text())
-
-
-def connect():
-    # Web3 client for RPC_URL, waiting up to 30 s for the node to come up
-    w3 = Web3(Web3.HTTPProvider(RPC_URL))
-    for _ in range(30):
-        if w3.is_connected():
-            return w3
-        time.sleep(1)
-    raise SystemExit(f"node not reachable at {RPC_URL}")
+from common import ARTIFACT, SHARED_DIR, w3
 
 
 def main():
-    w3 = connect()
     accounts = w3.eth.accounts
     deployer = accounts[0]
     print(f"Connected to chain {w3.eth.chain_id} at block {w3.eth.block_number}")
